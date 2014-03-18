@@ -36,6 +36,9 @@ class liqpay  extends  WC_Payment_Gateway {
 	 URL к серверу API
 	 */
 	private $LiqPayApiUrl='https://www.liqpay.com/api/pay';
+
+    // Постоянный префикс для поля description 	
+	private $DTF_DESCR_PREFIX = 'Blagotvoritelnost: ';
 	
 	public function __construct () {
 		global $woocommerce;
@@ -497,6 +500,10 @@ class liqpay  extends  WC_Payment_Gateway {
 				$descRIPTION .= ', '. esc_attr( $item['name'] ) . $_descRIPTION .' ('.$item["qty"].')';
 			}
 		}
+		
+		// Добавляем постоянный префикс для описания
+		$descRIPTION = $this->DTF_DESCR_PREFIX . $descRIPTION;
+		
 		if($this->is_lang_liqpay_en) { $lang = 'en'; } else $lang = 'ru';
 		if(get_woocommerce_currency() == "RUR") $get_woocommerce_currency = 'RUB'; else $get_woocommerce_currency = get_woocommerce_currency();
 $this->LiqPayUrl = $this->LiqPayUrl . "&order_id=" . $order_id;
@@ -674,6 +681,10 @@ $this->LiqPayUrl = $this->LiqPayUrl . "&order_id=" . $order_id;
 		}
 		if($this->is_lang_liqpay_en) { $lang = '<language>EN</language>'; } else $lang = '<language>RU</language>';
 		if(get_woocommerce_currency() == "RUB") $get_woocommerce_currency = 'RUR'; else $get_woocommerce_currency = get_woocommerce_currency();
+		
+		// Добавляем постоянный префикс для описания
+		$descRIPTION = $this->DTF_DESCR_PREFIX . $descRIPTION;
+		
 		$this->xml="<request>      
 			<version>1.2</version>
 			<result_url>".htmlspecialchars($this->LiqPayUrl, ENT_QUOTES, 'UTF-8')."</result_url>
