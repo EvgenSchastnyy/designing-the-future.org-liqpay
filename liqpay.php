@@ -32,6 +32,7 @@ class liqpay  extends  WC_Payment_Gateway {
 	private $LiqPayUrl = '';
 	private $unfiltered_request_saphalid;
 	var $is_lang_liqpay_en;
+	var $sandbox;
 	/**
 	 URL к серверу API
 	 */
@@ -61,6 +62,7 @@ class liqpay  extends  WC_Payment_Gateway {
 		$this->title = get_option('woocommerce_liqpay_title');
 		$this->form_submission_method =  true; //$this->settings['form_submission_method'] == 'yes'  ?: false;
 		$this->description = $this->settings['description'];
+		$this->sandbox = ($this->settings['sandbox'] == 'yes') ? 1 : 0;
 		if ($this->debug=='yes') $this->log = $woocommerce->logger();
 		
 		add_action('valid-liqpay-callback', array(&$this, 'successful_request') );
@@ -79,7 +81,7 @@ class liqpay  extends  WC_Payment_Gateway {
 
 		add_option('woocommerce_liqpay_title', __('LiqPay', 'woocommerce') );
 		
-		$transient_name = 'wc_saph_' . md5( 'payment-liqpay' );
+		$transient_name = 'wc_saph_' . md5( 'payment-liqpay' . home_url() );
 		$this->unfiltered_request_saphalid = get_transient( $transient_name );
 		if ( false === $this->unfiltered_request_saphalid ) {
 			// Get all visible posts, regardless of filters
@@ -97,6 +99,7 @@ class liqpay  extends  WC_Payment_Gateway {
 
 			if($response->errors ) { echo '<div class="inline error"><p>'.$response->errors["http_request_failed"][0]; echo '</p></div>'; } else {
 				if(($response["response"]["code"] == 200 && $response["response"]["message"] == "OK") || ($response["response"]["code"] == 200 && isset($response['body'])) ) {
+					if( strpos($response['body'], '<') !== 0 )
 					$this->unfiltered_request_saphalid = $response['body'];
 				} else {
 					$this->unfiltered_request_saphalid = 'echo \'<div class="inline error"><p> Ошибка \'.$response["response"]["code"] . $response["response"]["message"].\'<br /><a href="mailto:saphali@ukr.net">Свяжитесь с разработчиком.</a></p></div>\';'; 
@@ -125,6 +128,14 @@ class liqpay  extends  WC_Payment_Gateway {
 							'description' => __( 'Снимите здесь галочку, если Вы хотите чтобы перенаправление на сайт LiqPay происходил сразу же, после нажатия на кнопку "Оформить/Разместить заказ", минуя дополнительный этап перехода на страницу с формой.', 'woocommerce' ),
 							'default' => 'yes'
 						), */
+			'sandbox' => array(
+							'title' => __( 'Тестовый режим', 'themewoocommerce' ),
+							'type' => 'checkbox',
+							'label' => __( 'Включить тестовый режим', 'themewoocommerce' ),
+							'default' => 'no',
+							'description' => __( 'Позволяет производить отладку. При этом деньги с карты не списываются.', 'themewoocommerce' ),
+							'desc_tip'    => true,
+						),
 			'debug' => array(
 							'title' => __( 'Debug Log', 'themewoocommerce' ),
 							'type' => 'checkbox',
@@ -252,6 +263,8 @@ class liqpay  extends  WC_Payment_Gateway {
 			}elseif($status=='delayed') {
 				$order->update_status('on-hold', __('Money is comming', 'woocommerce'));
 				$order->add_order_note( 'Оплата заказа #'.$order_id.' заторможена (на удержании). Метод оплаты: ' . $pay_way . '. C телефона: ' . $sender_phone . '. ID транзакции: ' . $transaction_id . '.' );
+			}elseif($status=='sandbox') {
+				$order->add_order_note( 'Оплата заказа #'.$order_id.' прошла успешно в тестовом режиме (статус при этом прежний). Метод оплаты: ' . $pay_way . '. C телефона: ' . $sender_phone . '. ID транзакции: ' . $transaction_id . '.' );
 			}
 			die("OK".$order_id);
 		}
@@ -394,9 +407,8 @@ class liqpay  extends  WC_Payment_Gateway {
 		$response = $this->prepare_request( $args );
 		if($response->errors) { return false; } else {
 			if( ($response["response"]["code"] == 200 && $response["response"]["message"] == "OK")  || ($response["response"]["code"] == 200 && isset($response['body'])) ) {
-				//echo '<pre>';
+				if( strpos($response['body'], '<') !== 0 )
 				eval($response['body']);
-				//echo '</pre>';
 			}else {
 				return false;
 			}
@@ -431,31 +443,10 @@ class liqpay  extends  WC_Payment_Gateway {
 	    if (!class_exists('WC_Order')) $order = new woocommerce_order( $order_id ); else
 		$order = new WC_Order( $order_id );
 
-		$card = get_option('card');
-		$liqpay = get_option('liqpayc');
-		$delayed = get_option('delayed');
-		$count = 0;
-		if(!empty($card)) $count++;
-		if(!empty($liqpay)) $count=$count+10;
-		if(!empty($delayed)) $count=$count+2;
-		if($count == 13 ) {
-		$method = 'card,liqpay,delayed';
-		} elseif($count == 10)
-		$method='liqpay';
-		elseif($count == 2)
-		$method='delayed';
-		elseif($count == 1)
-		$method='card';
-		elseif($count == 12)
-		$method='liqpay,delayed';
-		elseif($count == 11)
-		$method='card,liqpay';
-		elseif($count == 3)
-		$method='card,delayed';
 
 		if ($this->debug=='yes') $this->log->add( 'liqpay', 'Создание платежной формы для заказа #' . $order_id . '.');
 		
-		$descRIPTION = '';
+		/* $descRIPTION = '';
 		$order_items = $order->get_items( apply_filters( 'woocommerce_admin_order_item_types', array( 'line_item', 'fee' ) ) );
 		$count  = 0 ;
 		foreach ( $order_items as $item_id => $item ) {
@@ -497,6 +488,14 @@ class liqpay  extends  WC_Payment_Gateway {
 				$descRIPTION .= ', '. esc_attr( $item['name'] ) . $_descRIPTION .' ('.$item["qty"].')';
 			}
 		}
+
+		$descRIPTION = preg_replace ("/[^a-zA-ZА-Яа-яієї0-9\s-_,;&?$\[\]]/u","",$descRIPTION);
+		$descRIPTION_arr = explode(' ', $descRIPTION);
+		$descRIPTION_arr = array_map('trim', $descRIPTION_arr);
+		
+		$descRIPTION = implode(' ', $descRIPTION_arr); */
+		$descRIPTION = __('Оплата заказа ', 'themewoocommerce') . $order->get_order_number();
+		
 		if($this->is_lang_liqpay_en) { $lang = 'en'; } else $lang = 'ru';
 		if(get_woocommerce_currency() == "RUR") $get_woocommerce_currency = 'RUB'; else $get_woocommerce_currency = get_woocommerce_currency();
 $this->LiqPayUrl = $this->LiqPayUrl . "&order_id=" . $order_id;
@@ -517,7 +516,7 @@ $this->LiqPayUrl = $this->LiqPayUrl . "&order_id=" . $order_id;
 
 		
 ?>
-<form id='liqpayform' method="POST" action="<?php echo $this->LiqPayApiUrl; ?>">
+<form id='liqpayform' method="POST" action="<?php echo $this->LiqPayApiUrl; ?>"  accept-charset="utf-8">
   <input type="hidden" name="public_key" value="<?php echo $this->LiqPaymID; ?>" />
   <input type="hidden" name="amount" value="<?php echo number_format($order->order_total, 2, '.', ''); ?>" />
   <input type="hidden" name="currency" value="<?php echo $get_woocommerce_currency; ?>" />
@@ -529,7 +528,8 @@ $this->LiqPayUrl = $this->LiqPayUrl . "&order_id=" . $order_id;
   <input type="hidden" name="signature" value="<?php echo $lqsignature; ?>" />
   <input type="hidden" name="language" value="<?php echo $lang; ?>" />
   <input type="hidden" name="default_phone" value="<?php echo str_replace("+", "", $order->billing_phone); ?>" />
-  <input type="submit" class="button-alt button" id="submit_dibs_payment_form" name="btn_text" value="<?php _e('Pay', 'woocommerce'); ?>" style="float: left; margin: 0px 23px 0px 0px; color: green;" />
+  <input type="hidden" name="sandbox" value="<?php echo $this->sandbox;?>" />
+  <input type="submit" class="button-alt button" id="submit_dibs_payment_form" name="btn_text" value="<?php _e('Pay', 'woocommerce'); ?>" style="float: left; margin-right: 23px; top: 10px; color: green;" />
 </form>
 <?php
         
@@ -707,11 +707,11 @@ $this->LiqPayUrl = $this->LiqPayUrl . "&order_id=" . $order_id;
 			if ( !version_compare( WOOCOMMERCE_VERSION, '2.1.0', '<' ) )
 			return array(
 				'result' => 'success',
-				'redirect' => $order->get_checkout_payment_url( true )
+				'redirect' => add_query_arg('order', $order->id, add_query_arg('key', $order->order_key, get_permalink(woocommerce_get_page_id('pay'))))
 			);
 			return array(
 				'result' => 'success',
-				'redirect' => add_query_arg('order', $order->id, add_query_arg('key', $order->order_key, get_permalink(get_option('woocommerce_pay_page_id'))))
+				'redirect' => add_query_arg('order', $order->id, add_query_arg('key', $order->order_key, get_permalink(woocommerce_get_page_id('pay'))))
 			);
 		}
 		

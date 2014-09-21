@@ -66,7 +66,7 @@ add_filter('woocommerce_payment_gateways', 'add_liqpay_gateway' );
 				update_option($_v, $url_pre . $url_lp);
 			}
 		}
-		$transient_name = 'wc_saph_' . md5( 'payment-liqpay' );
+		$transient_name = 'wc_saph_' . md5( 'payment-liqpay' . home_url() );
 		$pay[$transient_name] = get_transient( $transient_name );
 		
 		foreach($pay as $key => $tr) {
